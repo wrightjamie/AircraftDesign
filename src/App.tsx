@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { ConstraintDiagram } from './components/chart/ConstraintDiagram';
 import { ParametricPanel } from './components/design/ParametricPanel';
+import { MissionBuilder } from './components/mission/MissionBuilder';
 import { SlideDrawer } from './components/ui/SlideDrawer';
 import { EquationDisplay } from './components/ui/EquationDisplay';
 import { BenchmarkDossier } from './components/benchmarks/BenchmarkDossier';
@@ -10,7 +11,9 @@ import {
   type CadetAircraftDesign
 } from './physics/aircraftDesign';
 import { auditAircraftFeasibility } from './physics/feasibility';
+import { evaluateProcurementAndRisk } from './physics/costRisk';
 import { DEFAULT_MISSION_CONSTRAINTS } from './physics/constraints';
+import { MISSION_PRESETS, type MissionLeg } from './physics/missionLegs';
 import type { ConstraintDetail } from './data/constraintDetails';
 import type { BenchmarkAircraft } from './data/benchmarks';
 import {
@@ -21,22 +24,28 @@ import {
   Sliders,
   BarChart3,
   Layers,
-  Sparkles
+  Sparkles,
+  Route
 } from 'lucide-react';
 
 export function App() {
   // Cadet Aircraft Design State (Milestone 2)
   const [cadetDesign, setCadetDesign] = useState<CadetAircraftDesign>(DEFAULT_CADET_DESIGN);
 
+  // Cadet Mission Legs State (Option B)
+  const [missionLegs, setMissionLegs] = useState<MissionLeg[]>(() =>
+    JSON.parse(JSON.stringify(MISSION_PRESETS.tactical_airdrop.legs))
+  );
+
   // Active View Mode for Cadets (Full Console vs Focused Views)
-  const [viewMode, setViewMode] = useState<'console' | 'chart' | 'sliders'>('console');
+  const [viewMode, setViewMode] = useState<'console' | 'mission' | 'chart' | 'sliders'>('console');
 
   // Compute Mass Budget & Design Point
   const massBudget = useMemo(() => {
     return calculateAircraftMassBudget(cadetDesign);
   }, [cadetDesign]);
 
-  // Dynamically update mission constraints based on aircraft geometry (CD0, AR, e, CLmax)
+  // Dynamically update mission constraints based on aircraft geometry (CD0, AR, e, CLmax, and engine architecture)
   const activeConstraints = useMemo(() => {
     return {
       ...DEFAULT_MISSION_CONSTRAINTS,
@@ -44,6 +53,7 @@ export function App() {
       aspectRatio: cadetDesign.aspectRatio,
       oswaldEfficiency: massBudget.oswaldEfficiency,
       clMax: massBudget.clMaxFlaps,
+      engineClass: cadetDesign.engineClass,
     };
   }, [cadetDesign, massBudget]);
 
@@ -51,6 +61,19 @@ export function App() {
   const feasibilityAudit = useMemo(() => {
     return auditAircraftFeasibility(massBudget, activeConstraints);
   }, [massBudget, activeConstraints]);
+
+  // Compute Air Staff Procurement & Program Risk Evaluation
+  const procurementEval = useMemo(() => {
+    return evaluateProcurementAndRisk(
+      massBudget.oewKg,
+      cadetDesign.compositePercent,
+      cadetDesign.engineClass,
+      cadetDesign.engineCount,
+      cadetDesign.thrustPerEngineKn,
+      cadetDesign.sweepDeg,
+      cadetDesign.aspectRatio
+    );
+  }, [cadetDesign, massBudget]);
 
   // Drawer state
   const [drawerState, setDrawerState] = useState<{
@@ -154,6 +177,17 @@ export function App() {
               <span className="hidden sm:inline">Full Console</span>
             </button>
             <button
+              onClick={() => setViewMode('mission')}
+              className={`px-2.5 py-1 rounded-xs flex items-center gap-1.5 cursor-pointer transition-colors ${
+                viewMode === 'mission'
+                  ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/40'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Route className="w-3.5 h-3.5" />
+              <span>Mission Legs</span>
+            </button>
+            <button
               onClick={() => setViewMode('chart')}
               className={`px-2.5 py-1 rounded-xs flex items-center gap-1.5 cursor-pointer transition-colors ${
                 viewMode === 'chart'
@@ -197,11 +231,32 @@ export function App() {
               activeConstraints={activeConstraints}
             />
 
+            {/* Mission Legs Engine & Breguet Sortie Builder */}
+            <MissionBuilder
+              design={cadetDesign}
+              massBudget={massBudget}
+              legs={missionLegs}
+              onLegsChange={setMissionLegs}
+            />
+
             {/* Parametric Input Sliders Panel */}
             <ParametricPanel
               design={cadetDesign}
               budget={massBudget}
+              procurement={procurementEval}
               onChange={setCadetDesign}
+            />
+          </div>
+        )}
+
+        {/* Mission Focused View */}
+        {viewMode === 'mission' && (
+          <div className="space-y-6">
+            <MissionBuilder
+              design={cadetDesign}
+              massBudget={massBudget}
+              legs={missionLegs}
+              onLegsChange={setMissionLegs}
             />
           </div>
         )}
@@ -229,6 +284,7 @@ export function App() {
             <ParametricPanel
               design={cadetDesign}
               budget={massBudget}
+              procurement={procurementEval}
               onChange={setCadetDesign}
             />
           </div>

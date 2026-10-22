@@ -33,6 +33,9 @@ export interface OperationalConstraints {
   turnLoadFactorG: number;         // Sustained g load (e.g., 3.0 g)
   turnSpeedKts: number;            // Speed during turn in knots (e.g., 250 kts)
   turnAltitudeFt: number;          // Altitude during turn (e.g., 10,000 ft)
+
+  // Propulsion Architecture
+  engineClass?: 'turboprop' | 'high_bypass_turbofan' | 'low_bypass_turbofan' | 'afterburning_turbojet';
 }
 
 /**
@@ -79,18 +82,44 @@ export function calculateStallWingLoading(constraints: OperationalConstraints): 
 }
 
 /**
+ * Static thrust multiplier based on engine propulsion architecture.
+ * Propellers convert shaft horsepower into massive static thrust at low airspeeds (T ≈ eta_p * P / V).
+ * Pure turbojets produce lower relative static thrust per unit rated cruise thrust.
+ */
+export function getEngineStaticThrustMultiplier(engineClass?: string): number {
+  switch (engineClass) {
+    case 'turboprop': return 1.30;          // +30% effective acceleration thrust at low ground roll speeds
+    case 'high_bypass_turbofan': return 1.05; // Large fan bypass produces good low-speed thrust
+    case 'low_bypass_turbofan': return 1.00;  // Standard baseline
+    case 'afterburning_turbojet': return 0.90; // Optimized for high supersonic speed, lower static pressure ratio
+    default: return 1.00;
+  }
+}
+
+/**
+ * Propwash / Blown-Wing Slipstream lift coefficient boost.
+ * Propellers wash accelerated air directly over the inner wing and flaps, increasing local dynamic pressure (q_local > q_inf)
+ * and boosting the effective takeoff lift coefficient by +20%.
+ */
+export function getPropwashLiftBonus(engineClass?: string): number {
+  return engineClass === 'turboprop' ? 0.20 : 0.00;
+}
+
+/**
  * 2. Takeoff Field Length Constraint
- * (T/W)_TO = (1.21 / (g * rho0 * CL_TO * S_TO)) * (W/S) + mu
+ * (T/W)_TO = [ 1.21 / (g * rho0 * CL_TO_eff * S_TO) * (W/S) + mu ] / kappa_static
  */
 export function calculateTakeoffTW(ws: number, constraints: OperationalConstraints): number {
   const g = GRAVITY;
   const rho0 = SEA_LEVEL_DENSITY;
   const sTO = constraints.takeoffFieldLengthM;
-  const clTO = constraints.clTakeoff;
+  const propwashBonus = getPropwashLiftBonus(constraints.engineClass);
+  const clTO = constraints.clTakeoff * (1 + propwashBonus);
+  const staticThrustMult = getEngineStaticThrustMultiplier(constraints.engineClass);
   const mu = constraints.groundFrictionMu;
 
-  const slope = 1.21 / (g * rho0 * clTO * sTO);
-  return slope * ws + mu;
+  const requiredStaticTW = (1.21 / (g * rho0 * clTO * sTO)) * ws + mu;
+  return requiredStaticTW / staticThrustMult;
 }
 
 /**

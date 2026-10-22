@@ -1,15 +1,11 @@
 import { GRAVITY } from './isa.ts';
+import { calculateCompositeEmptyFraction } from './costRisk.ts';
 
 export type EngineClass =
   | 'turboprop'
   | 'high_bypass_turbofan'
   | 'low_bypass_turbofan'
   | 'afterburning_turbojet';
-
-export type StructuralMaterial =
-  | 'aluminum_alloy'
-  | 'carbon_composite'
-  | 'advanced_titanium';
 
 export interface CadetAircraftDesign {
   // Identity
@@ -26,7 +22,7 @@ export interface CadetAircraftDesign {
   thrustPerEngineKn: number; // Max thrust rating per engine (kN)
 
   // Structural Materials & Tech Level
-  material: StructuralMaterial;
+  compositePercent: number; // 0% (full aluminum alloy) to 100% (advanced carbon composite matrix)
 
   // Mass & Payload Allocation
   internalFuelKg: number;
@@ -39,6 +35,7 @@ export interface AircraftMassBudget {
   fuelKg: number;               // Internal fuel (kg)
   payloadKg: number;            // Fixed or cargo payload (kg)
   emptyWeightFraction: number;  // OEW / MTOW
+  compositePercent: number;     // Active composite percentage
   totalThrustKn: number;        // Combined engine thrust (kN)
   totalThrustN: number;         // Combined engine thrust (N)
   wingLoadingNm2: number;       // (MTOW * g) / S
@@ -58,26 +55,10 @@ export const DEFAULT_CADET_DESIGN: CadetAircraftDesign = {
   engineClass: 'low_bypass_turbofan',
   engineCount: 2,
   thrustPerEngineKn: 55.0,
-  material: 'carbon_composite',
+  compositePercent: 65, // 65% composite matrix
   internalFuelKg: 4500,
-  payloadKg: 2500, // Standard RAF tactical payload (e.g. 20 troops or precision cargo)
+  payloadKg: 2500, // Standard tactical mission payload
 };
-
-/**
- * Returns baseline empty weight fraction based on structural material selection
- */
-export function getMaterialEmptyFraction(material: StructuralMaterial): number {
-  switch (material) {
-    case 'aluminum_alloy':
-      return 0.53; // Traditional stressed-skin aluminum alloy
-    case 'carbon_composite':
-      return 0.45; // ~15% lighter structural airframe weight
-    case 'advanced_titanium':
-      return 0.49; // High thermal and load tolerance
-    default:
-      return 0.53;
-  }
-}
 
 /**
  * Estimate zero-lift parasite drag coefficient CD0 based on engine class, wetted area, and sweep
@@ -119,7 +100,6 @@ export function estimateCd0(
 export function estimateOswaldEfficiency(aspectRatio: number, sweepDeg: number): number {
   const sweepRad = (sweepDeg * Math.PI) / 180;
   const straightEfficiency = 1.78 * (1 - 0.045 * Math.pow(aspectRatio, 0.68)) - 0.6;
-  // Sweep decreases span efficiency slightly due to spanwise boundary layer flow
   const sweepReduction = 1 - 0.0025 * sweepDeg;
   const efficiency = straightEfficiency * sweepReduction * Math.cos(sweepRad * 0.3);
 
@@ -131,12 +111,9 @@ export function estimateOswaldEfficiency(aspectRatio: number, sweepDeg: number):
  */
 export function calculateAircraftMassBudget(design: CadetAircraftDesign): AircraftMassBudget {
   const g = GRAVITY;
-  const emptyWeightFraction = getMaterialEmptyFraction(design.material);
+  const emptyWeightFraction = calculateCompositeEmptyFraction(design.compositePercent);
 
   // MTOW formulation:
-  // MTOW = OEW + Fuel + Payload
-  // MTOW = (emptyWeightFraction * MTOW) + Fuel + Payload
-  // MTOW * (1 - emptyWeightFraction) = Fuel + Payload
   // MTOW = (Fuel + Payload) / (1 - emptyWeightFraction)
   const usefulLoadKg = design.internalFuelKg + design.payloadKg;
   const mtowKg = Math.max(500, usefulLoadKg / (1 - emptyWeightFraction));
@@ -169,6 +146,7 @@ export function calculateAircraftMassBudget(design: CadetAircraftDesign): Aircra
     fuelKg: design.internalFuelKg,
     payloadKg: design.payloadKg,
     emptyWeightFraction,
+    compositePercent: design.compositePercent,
     totalThrustKn,
     totalThrustN,
     wingLoadingNm2: Number(wingLoadingNm2.toFixed(1)),
@@ -196,7 +174,7 @@ export const DESIGN_PRESETS: Record<string, { name: string; description: string;
       engineClass: 'turboprop',
       engineCount: 1,
       thrustPerEngineKn: 8.5,
-      material: 'carbon_composite',
+      compositePercent: 85,
       internalFuelKg: 280,
       payloadKg: 200,
     },
@@ -212,7 +190,7 @@ export const DESIGN_PRESETS: Record<string, { name: string; description: string;
       engineClass: 'afterburning_turbojet',
       engineCount: 2,
       thrustPerEngineKn: 85.0,
-      material: 'carbon_composite',
+      compositePercent: 70,
       internalFuelKg: 5200,
       payloadKg: 1800,
     },
@@ -228,7 +206,7 @@ export const DESIGN_PRESETS: Record<string, { name: string; description: string;
       engineClass: 'turboprop',
       engineCount: 2,
       thrustPerEngineKn: 65.0,
-      material: 'aluminum_alloy',
+      compositePercent: 30,
       internalFuelKg: 7500,
       payloadKg: 4500,
     },
@@ -244,7 +222,7 @@ export const DESIGN_PRESETS: Record<string, { name: string; description: string;
       engineClass: 'high_bypass_turbofan',
       engineCount: 2,
       thrustPerEngineKn: 48.0,
-      material: 'carbon_composite',
+      compositePercent: 55,
       internalFuelKg: 8200,
       payloadKg: 2200,
     },

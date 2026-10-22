@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert';
 import {
   calculateAircraftMassBudget,
-  getMaterialEmptyFraction,
   estimateCd0,
   estimateOswaldEfficiency,
   DEFAULT_CADET_DESIGN,
@@ -17,7 +16,7 @@ test('Aircraft Design: Mass Budget MTOW formulation', () => {
     ...DEFAULT_CADET_DESIGN,
     internalFuelKg: 4000,
     payloadKg: 2000,
-    material: 'aluminum_alloy', // fraction = 0.53
+    compositePercent: 0, // 0% composite (aluminum alloy) => fraction = 0.53
   };
 
   const budget = calculateAircraftMassBudget(design);
@@ -31,8 +30,8 @@ test('Aircraft Design: Mass Budget MTOW formulation', () => {
 });
 
 test('Aircraft Design: Composite structure saves airframe weight', () => {
-  const alDesign: CadetAircraftDesign = { ...DEFAULT_CADET_DESIGN, material: 'aluminum_alloy' };
-  const compDesign: CadetAircraftDesign = { ...DEFAULT_CADET_DESIGN, material: 'carbon_composite' };
+  const alDesign: CadetAircraftDesign = { ...DEFAULT_CADET_DESIGN, compositePercent: 0 };
+  const compDesign: CadetAircraftDesign = { ...DEFAULT_CADET_DESIGN, compositePercent: 70 };
 
   const alBudget = calculateAircraftMassBudget(alDesign);
   const compBudget = calculateAircraftMassBudget(compDesign);
@@ -109,7 +108,7 @@ test('Feasibility Audit: Identifies compliant balanced configuration', () => {
     engineClass: 'low_bypass_turbofan',
     engineCount: 2,
     thrustPerEngineKn: 85.0, // 170 kN total
-    material: 'carbon_composite',
+    compositePercent: 70,
     internalFuelKg: 4000,
     payloadKg: 2500,
   };

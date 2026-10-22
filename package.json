@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "test": "node --experimental-strip-types --test src/physics/isa.test.ts src/physics/constraints.test.ts src/physics/aircraftDesign.test.ts src/data/benchmarks.test.ts src/data/constraintDetails.test.ts",
+    "test": "node --experimental-strip-types --test src/physics/isa.test.ts src/physics/constraints.test.ts src/physics/aircraftDesign.test.ts src/physics/costRisk.test.ts src/physics/missionLegs.test.ts src/data/benchmarks.test.ts src/data/constraintDetails.test.ts",
     "lint": "eslint .",
     "preview": "vite preview"
   },

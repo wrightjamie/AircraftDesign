@@ -3,14 +3,30 @@ import {
   type CadetAircraftDesign,
   type AircraftMassBudget,
   type EngineClass,
-  type StructuralMaterial,
   DESIGN_PRESETS
 } from '../../physics/aircraftDesign.ts';
-import { Sliders, Wrench, Shield, Zap, Sparkles, Fuel, Weight } from 'lucide-react';
+import {
+  calculateMaterialCostMultiplier,
+  type ProcurementEvaluation
+} from '../../physics/costRisk.ts';
+import {
+  Sliders,
+  Wrench,
+  Shield,
+  Zap,
+  Sparkles,
+  Fuel,
+  Weight,
+  Coins,
+  AlertTriangle,
+  CheckCircle2,
+  TrendingUp
+} from 'lucide-react';
 
 export interface ParametricPanelProps {
   design: CadetAircraftDesign;
   budget: AircraftMassBudget;
+  procurement?: ProcurementEvaluation;
   onChange: (updated: CadetAircraftDesign) => void;
   onHighlightViolations?: () => void;
 }
@@ -18,6 +34,7 @@ export interface ParametricPanelProps {
 export const ParametricPanel: React.FC<ParametricPanelProps> = ({
   design,
   budget,
+  procurement,
   onChange,
 }) => {
   const updateField = <K extends keyof CadetAircraftDesign>(
@@ -41,6 +58,8 @@ export const ParametricPanel: React.FC<ParametricPanelProps> = ({
   const fuelPercent = (budget.fuelKg / budget.mtowKg) * 100;
   const payloadPercent = (budget.payloadKg / budget.mtowKg) * 100;
   const emptyPercent = 100 - fuelPercent - payloadPercent;
+
+  const materialCostMult = calculateMaterialCostMultiplier(design.compositePercent);
 
   return (
     <div className="w-full bg-[var(--hud-panel)] border border-[var(--hud-border)] rounded-lg p-4 space-y-5 font-mono text-xs select-none">
@@ -254,7 +273,7 @@ export const ParametricPanel: React.FC<ParametricPanelProps> = ({
             <span className="text-[10px] text-slate-400 block uppercase">Engine Architecture:</span>
             <div className="grid grid-cols-2 gap-1.5">
               {[
-                { id: 'turboprop', label: 'Turboprop' },
+                { id: 'turboprop', label: 'Turboprop (High Static T)' },
                 { id: 'high_bypass_turbofan', label: 'High-Bypass Fan' },
                 { id: 'low_bypass_turbofan', label: 'Low-Bypass Fan' },
                 { id: 'afterburning_turbojet', label: 'Afterburning Jet' },
@@ -318,56 +337,58 @@ export const ParametricPanel: React.FC<ParametricPanelProps> = ({
         </div>
 
         {/* ======================================================== */}
-        {/* SECTION 3: MATERIALS & TECH LEVEL                        */}
+        {/* SECTION 3: COMPOSITE MATERIALS & TECH LEVEL              */}
         {/* ======================================================== */}
         <div className="bg-slate-900/50 border border-slate-800/80 rounded-md p-3 space-y-3">
           <h4 className="text-[11px] uppercase tracking-wider text-emerald-400 font-bold flex items-center gap-1.5 border-b border-slate-800 pb-1.5">
             <Shield className="w-3.5 h-3.5" />
-            3. Airframe Construction & Materials
+            3. Airframe Composite Fraction (%)
           </h4>
 
-          <div className="space-y-1.5">
-            {[
-              {
-                id: 'aluminum_alloy',
-                name: 'Aviation Aluminum Alloy',
-                desc: 'Traditional stressed-skin (empty fraction 53%). Lowest development risk.',
-              },
-              {
-                id: 'carbon_composite',
-                name: 'Carbon-Composite Matrix',
-                desc: 'Advanced CFRP laminates (empty fraction 45%). ~15% lighter airframe.',
-              },
-              {
-                id: 'advanced_titanium',
-                name: 'Titanium-Alloy Monocoque',
-                desc: 'Extreme thermal and load tolerance (empty fraction 49%). Higher cost.',
-              },
-            ].map((mat) => (
-              <label
-                key={mat.id}
-                className={`flex items-start gap-2 p-2 rounded-xs border cursor-pointer transition-colors ${
-                  design.material === mat.id
-                    ? 'bg-emerald-950/60 border-emerald-500/80 text-emerald-200'
-                    : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="material"
-                  value={mat.id}
-                  checked={design.material === mat.id}
-                  onChange={() => updateField('material', mat.id as StructuralMaterial)}
-                  className="mt-0.5 accent-emerald-500"
-                />
-                <div>
-                  <span className="font-semibold text-slate-100 block">{mat.name}</span>
-                  <span className="text-[10px] text-slate-400 leading-tight block">
-                    {mat.desc}
-                  </span>
-                </div>
-              </label>
-            ))}
+          {/* Continuous Composite Slider */}
+          <div className="space-y-2">
+            <div className="flex justify-between items-center text-slate-200">
+              <span>Carbon-Composite Content:</span>
+              <span className="font-bold text-emerald-300 text-sm">
+                {design.compositePercent}% <span className="text-[10px] text-slate-400 font-normal">Matrix</span>
+              </span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              step="5"
+              value={design.compositePercent}
+              onChange={(e) => updateField('compositePercent', Number(e.target.value))}
+              className="w-full accent-emerald-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+            />
+            <div className="flex justify-between text-[9px] text-slate-500">
+              <span>0% (Full Aluminum)</span>
+              <span>50% (Wings/Tail)</span>
+              <span>100% (Monocoque)</span>
+            </div>
+
+            {/* Mass saving & Cost trade-off indicator */}
+            <div className="bg-slate-950 p-2.5 rounded-sm border border-slate-800 space-y-1.5 text-[10px]">
+              <div className="flex justify-between text-slate-300">
+                <span>Airframe Empty Fraction:</span>
+                <span className="font-bold text-emerald-400">
+                  {(budget.emptyWeightFraction * 100).toFixed(1)}%
+                </span>
+              </div>
+              <div className="flex justify-between text-slate-300">
+                <span>Mass Saved vs Aluminum:</span>
+                <span className="font-bold text-cyan-300">
+                  -{((0.53 - budget.emptyWeightFraction) * 100).toFixed(1)}% airframe weight
+                </span>
+              </div>
+              <div className="flex justify-between text-slate-300 border-t border-slate-800/80 pt-1">
+                <span>Material Cost Factor (Exponential):</span>
+                <span className="font-bold text-amber-400">
+                  {materialCostMult}x baseline
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -429,6 +450,124 @@ export const ParametricPanel: React.FC<ParametricPanelProps> = ({
           </div>
         </div>
       </div>
+
+      {/* ======================================================== */}
+      {/* SECTION 5: AIR STAFF PROCUREMENT & RISK METER            */}
+      {/* ======================================================== */}
+      {procurement && (
+        <div className="bg-slate-900/90 border border-slate-800 rounded-md p-3.5 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
+            <div className="flex items-center gap-1.5">
+              <Coins className="w-4 h-4 text-amber-400" />
+              <h4 className="text-[11px] uppercase tracking-wider text-slate-100 font-bold">
+                Air Staff Procurement & Technological Risk Audit
+              </h4>
+            </div>
+
+            {/* Board Decision Pill */}
+            <span
+              className={`text-[9px] px-2.5 py-0.5 rounded-xs font-bold uppercase tracking-wider flex items-center gap-1 border ${
+                procurement.boardStatus === 'approved'
+                  ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
+                  : procurement.boardStatus === 'caution'
+                  ? 'bg-amber-950/80 border-amber-500 text-amber-300'
+                  : 'bg-red-950/80 border-red-500 text-red-300 animate-pulse'
+              }`}
+            >
+              {procurement.boardStatus === 'approved' && <CheckCircle2 className="w-3 h-3" />}
+              {procurement.boardStatus === 'caution' && <TrendingUp className="w-3 h-3" />}
+              {procurement.boardStatus === 'rejected' && <AlertTriangle className="w-3 h-3" />}
+              {procurement.boardStatus === 'approved'
+                ? 'PROGRAM APPROVED'
+                : procurement.boardStatus === 'caution'
+                ? 'ELEVATED RISK // REVIEW'
+                : 'PROJECT CANCELLED BY AIR STAFF'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* Unit Cost Gauge */}
+            <div className="bg-slate-950 p-2.5 rounded-sm border border-slate-800 space-y-1.5">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] text-slate-400 uppercase">Estimated Unit Cost:</span>
+                <span
+                  className={`text-sm font-bold ${
+                    procurement.isOverBudget ? 'text-red-400' : 'text-slate-100'
+                  }`}
+                >
+                  £{procurement.unitCostM.toFixed(1)}M
+                  <span className="text-[10px] font-normal text-slate-500 ml-1">
+                    / £{procurement.costBudgetLimitM}M Budget
+                  </span>
+                </span>
+              </div>
+              <div className="w-full h-1.5 rounded-xs overflow-hidden bg-slate-800">
+                <div
+                  style={{ width: `${Math.min(100, procurement.costBudgetUsedPercent)}%` }}
+                  className={`h-full transition-all ${
+                    procurement.isOverBudget
+                      ? 'bg-red-500'
+                      : procurement.costBudgetUsedPercent > 85
+                      ? 'bg-amber-500'
+                      : 'bg-cyan-500'
+                  }`}
+                />
+              </div>
+              <div className="flex justify-between text-[9px] text-slate-500">
+                <span>Airframe: £{procurement.airframeCostM}M</span>
+                <span>Engines: £{procurement.enginesCostM}M</span>
+                <span>Avionics: £{procurement.avionicsCostM}M</span>
+              </div>
+            </div>
+
+            {/* Program Risk Gauge */}
+            <div className="bg-slate-950 p-2.5 rounded-sm border border-slate-800 space-y-1.5">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] text-slate-400 uppercase">Technological Risk Index:</span>
+                <span
+                  className={`text-sm font-bold ${
+                    procurement.programRiskPercent > 75
+                      ? 'text-red-400'
+                      : procurement.programRiskPercent > 55
+                      ? 'text-amber-400'
+                      : 'text-emerald-400'
+                  }`}
+                >
+                  {procurement.programRiskPercent}%
+                  <span className="text-[10px] font-normal text-slate-500 ml-1">
+                    (Max 75% Limit)
+                  </span>
+                </span>
+              </div>
+              <div className="w-full h-1.5 rounded-xs overflow-hidden bg-slate-800">
+                <div
+                  style={{ width: `${Math.min(100, procurement.programRiskPercent)}%` }}
+                  className={`h-full transition-all ${
+                    procurement.programRiskPercent > 75
+                      ? 'bg-red-500'
+                      : procurement.programRiskPercent > 55
+                      ? 'bg-amber-500'
+                      : 'bg-emerald-500'
+                  }`}
+                />
+              </div>
+              <div className="flex justify-between text-[9px] text-slate-500">
+                <span>Composites: +{procurement.materialRiskPercent}%</span>
+                <span>Powerplant: +{procurement.engineRiskPercent}%</span>
+                <span>Aero: +{procurement.aeroComplexityRisk}%</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Board Critique text */}
+          <div className="p-2 rounded-xs bg-slate-950/70 border border-slate-800/80 text-[11px] text-slate-300">
+            <span className="text-amber-400 font-bold block uppercase text-[10px] mb-0.5">
+              Procurement Board Briefing:
+            </span>
+            <p>{procurement.boardCritique}</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
