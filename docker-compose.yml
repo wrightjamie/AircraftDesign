@@ -1,0 +1,15 @@
+services:
+  rafac-aero-sim:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: rafac-aero-sim:latest
+    container_name: rafac_aerospace_simulation
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3

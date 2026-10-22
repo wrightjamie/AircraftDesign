@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+:root {
+  /* HUD Military Dark Theme */
+  --hud-bg: #0b0f17;
+  --hud-panel: #111827;
+  --hud-panel-header: #1a2333;
+  --hud-border: #1e293b;
+  --hud-border-bright: #334155;
+  --hud-text: #f1f5f9;
+  --hud-text-muted: #94a3b8;
+  --hud-grid: rgba(148, 163, 184, 0.12);
+  --hud-grid-major: rgba(148, 163, 184, 0.28);
+  --hud-accent: #06b6d4;
+  --hud-radar: #22c55e;
+
+  /* Constraint line base colors */
+  --color-stall: #ef4444;        /* Red */
+  --color-takeoff: #f59e0b;      /* Amber */
+  --color-climb: #3b82f6;        /* Blue */
+  --color-ceiling: #06b6d4;      /* Cyan */
+  --color-speed: #8b5cf6;        /* Purple */
+  --color-turn: #ec4899;         /* Pink */
+  --color-cruise: #10b981;       /* Emerald */
+
+  /* Overlays & Targets */
+  --color-benchmark: #38bdf8;
+  --color-feasible-zone: #22c55e;
+}
+
+body {
+  margin: 0;
+  background-color: var(--hud-bg);
+  color: var(--hud-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom scrollbar for HUD panels */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--hud-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--hud-border-bright);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--hud-text-muted);
+}
