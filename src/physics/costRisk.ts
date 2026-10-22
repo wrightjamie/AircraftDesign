@@ -5,14 +5,17 @@ export interface ProcurementEvaluation {
   airframeCostM: number;           // Structural airframe cost in £ Millions
   enginesCostM: number;            // Total powerplant cost in £ Millions
   avionicsCostM: number;           // Avionics & systems cost in £ Millions
+  stealthCostM?: number;           // Low Observable radar-absorbent & shaping cost in £ Millions
+  highLiftCostM?: number;          // Flap and slat actuation hardware cost in £ Millions
   costBudgetLimitM: number;        // RAF fleet unit budget limit in £ Millions
   isOverBudget: boolean;
   costBudgetUsedPercent: number;
 
   programRiskPercent: number;      // Total technological program risk (0 - 100%)
   materialRiskPercent: number;     // Risk from composite fraction
-  engineRiskPercent: number;       // Risk from engine class
+  engineRiskPercent: number;       // Risk from engine class & maturity
   aeroComplexityRisk: number;      // Risk from high sweep / aspect ratio
+  stealthRiskPercent?: number;     // Risk from Low Observable treatment
 
   boardStatus: 'approved' | 'caution' | 'rejected';
   boardCritique: string;
@@ -48,19 +51,26 @@ export function calculateMaterialCostMultiplier(compositePercent: number): numbe
 /**
  * Engine unit procurement cost based on architecture
  */
-export function getEngineUnitCostM(engineClass: EngineClass, thrustKn: number): number {
+export function getEngineUnitCostM(engineClass: EngineClass, thrustKn: number, engineTechLevel?: string): number {
+  let baseCost = 2.5;
   switch (engineClass) {
     case 'turboprop':
-      return 1.2 + thrustKn * 0.015;
+      baseCost = 1.2 + thrustKn * 0.015;
+      break;
     case 'high_bypass_turbofan':
-      return 2.5 + thrustKn * 0.025;
+      baseCost = 2.5 + thrustKn * 0.025;
+      break;
     case 'low_bypass_turbofan':
-      return 4.0 + thrustKn * 0.035;
+      baseCost = 4.0 + thrustKn * 0.035;
+      break;
     case 'afterburning_turbojet':
-      return 6.5 + thrustKn * 0.050; // High-temperature turbine blades, afterburner liner
-    default:
-      return 2.5;
+      baseCost = 6.5 + thrustKn * 0.050; // High-temperature turbine blades, afterburner liner
+      break;
   }
+  if (engineTechLevel === 'advanced_lightweight') {
+    baseCost *= 1.20; // 20% premium for advanced single-crystal turbine metallurgy
+  }
+  return baseCost;
 }
 
 /**
@@ -74,7 +84,12 @@ export function evaluateProcurementAndRisk(
   thrustPerEngineKn: number,
   sweepDeg: number,
   aspectRatio: number,
-  budgetLimitM: number = DEFAULT_BUDGET_LIMIT_M
+  budgetLimitM: number = DEFAULT_BUDGET_LIMIT_M,
+  stealthLevel: 'conventional' | 'reduced_signature' | 'vlo_stealth' = 'conventional',
+  highLiftDevice: 'plain_clean' | 'single_slotted_flaps' | 'fowler_slats' = 'single_slotted_flaps',
+  wingAreaM2: number = 36,
+  mtowKg: number = 15000,
+  engineTechLevel: 'standard_proven' | 'advanced_lightweight' = 'standard_proven'
 ): ProcurementEvaluation {
   const fComp = Math.min(100, Math.max(0, compositePercent)) / 100;
 
@@ -85,13 +100,33 @@ export function evaluateProcurementAndRisk(
   const airframeCostM = Number((baseAirframeCost * materialMult).toFixed(2));
 
   // Engine Cost
-  const costPerEngine = getEngineUnitCostM(engineClass, thrustPerEngineKn);
+  const costPerEngine = getEngineUnitCostM(engineClass, thrustPerEngineKn, engineTechLevel);
   const enginesCostM = Number((costPerEngine * engineCount).toFixed(2));
+
+  // High-Lift Hardware Cost (actuators, tracks, screw-jacks)
+  let highLiftCostM = 0;
+  if (highLiftDevice === 'single_slotted_flaps') {
+    highLiftCostM = Number((0.6 + 0.012 * Math.sqrt(Math.max(10, wingAreaM2))).toFixed(2));
+  } else if (highLiftDevice === 'fowler_slats') {
+    highLiftCostM = Number((1.8 + 0.022 * Math.sqrt(Math.max(10, wingAreaM2))).toFixed(2));
+  }
+
+  // Low Observable (LO) Stealth Cost
+  // Non-linear: exponentially harder on large airframes (MTOW^1.4)
+  let stealthCostM = 0;
+  let stealthRiskPercent = 0;
+  if (stealthLevel === 'reduced_signature') {
+    stealthCostM = Number((3.5 * Math.pow(Math.max(5000, mtowKg) / 15000, 0.8)).toFixed(2));
+    stealthRiskPercent = 10;
+  } else if (stealthLevel === 'vlo_stealth') {
+    stealthCostM = Number((14.0 * Math.pow(Math.max(5000, mtowKg) / 15000, 1.4)).toFixed(2));
+    stealthRiskPercent = 25;
+  }
 
   // Avionics & Mission Systems baseline
   const avionicsCostM = 6.5;
 
-  const totalUnitCostM = Number((airframeCostM + enginesCostM + avionicsCostM).toFixed(2));
+  const totalUnitCostM = Number((airframeCostM + enginesCostM + avionicsCostM + highLiftCostM + stealthCostM).toFixed(2));
   const isOverBudget = totalUnitCostM > budgetLimitM;
   const costBudgetUsedPercent = Number(((totalUnitCostM / budgetLimitM) * 100).toFixed(1));
 
@@ -112,8 +147,11 @@ export function evaluateProcurementAndRisk(
       engineRiskPercent = 18;
       break;
     case 'afterburning_turbojet':
-      engineRiskPercent = 28;
+      engineRiskPercent = 26;
       break;
+  }
+  if (engineTechLevel === 'advanced_lightweight') {
+    engineRiskPercent += 12; // Development risk for unproven turbine alloys
   }
 
   // Aerodynamic Complexity Risk (extreme sweep or extreme aspect ratio)
@@ -123,7 +161,7 @@ export function evaluateProcurementAndRisk(
 
   const totalRisk = Math.min(
     98,
-    Math.round(10 + materialRiskPercent + engineRiskPercent + aeroComplexityRisk)
+    Math.round(8 + materialRiskPercent + engineRiskPercent + aeroComplexityRisk + stealthRiskPercent)
   );
 
   // 3. Air Staff Procurement Board Decision

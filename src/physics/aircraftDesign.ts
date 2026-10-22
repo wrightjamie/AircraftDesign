@@ -7,22 +7,39 @@ export type EngineClass =
   | 'low_bypass_turbofan'
   | 'afterburning_turbojet';
 
+export type HighLiftDeviceTier =
+  | 'plain_clean'
+  | 'single_slotted_flaps'
+  | 'fowler_slats';
+
+export type StealthLevel =
+  | 'conventional'
+  | 'reduced_signature'
+  | 'vlo_stealth';
+
+export type EngineTechLevel =
+  | 'standard_proven'
+  | 'advanced_lightweight';
+
 export interface CadetAircraftDesign {
   // Identity
   callsign: string;
 
-  // Wing Planform Geometry
-  wingAreaM2: number;      // S (m^2)
-  aspectRatio: number;     // AR (b^2 / S)
-  sweepDeg: number;        // Quarter-chord sweep angle (degrees)
+  // Wing Planform Geometry & High Lift
+  wingAreaM2: number;          // S (m^2)
+  aspectRatio: number;         // AR (b^2 / S)
+  sweepDeg: number;            // Quarter-chord sweep angle (degrees)
+  highLiftDevice: HighLiftDeviceTier; // Plain vs Single-Slotted vs Fowler & Slats
 
   // Propulsion System
   engineClass: EngineClass;
-  engineCount: number;     // 1, 2, 4
-  thrustPerEngineKn: number; // Max thrust rating per engine (kN)
+  engineCount: number;         // 1, 2, 4
+  thrustPerEngineKn: number;   // Max thrust rating per engine (kN)
+  engineTechLevel: EngineTechLevel; // Standard proven vs Advanced lightweight turbine
 
-  // Structural Materials & Tech Level
-  compositePercent: number; // 0% (full aluminum alloy) to 100% (advanced carbon composite matrix)
+  // Structural Materials & Stealth
+  compositePercent: number;    // 0% (full aluminum alloy) to 100% (advanced carbon composite matrix)
+  stealthLevel: StealthLevel;  // Conventional vs Reduced Signature vs VLO Stealth
 
   // Mass & Payload Allocation
   internalFuelKg: number;
@@ -34,8 +51,11 @@ export interface AircraftMassBudget {
   oewKg: number;                // Operating Empty Weight (kg)
   fuelKg: number;               // Internal fuel (kg)
   payloadKg: number;            // Fixed or cargo payload (kg)
+  engineWeightKg: number;       // Propulsion dry weight (kg)
   emptyWeightFraction: number;  // OEW / MTOW
   compositePercent: number;     // Active composite percentage
+  stealthLevel: StealthLevel;   // Active stealth tier
+  highLiftDevice: HighLiftDeviceTier; // Active flap tier
   totalThrustKn: number;        // Combined engine thrust (kN)
   totalThrustN: number;         // Combined engine thrust (N)
   wingLoadingNm2: number;       // (MTOW * g) / S
@@ -52,10 +72,13 @@ export const DEFAULT_CADET_DESIGN: CadetAircraftDesign = {
   wingAreaM2: 36.0,
   aspectRatio: 6.5,
   sweepDeg: 20,
+  highLiftDevice: 'single_slotted_flaps',
   engineClass: 'low_bypass_turbofan',
   engineCount: 2,
   thrustPerEngineKn: 55.0,
+  engineTechLevel: 'standard_proven',
   compositePercent: 65, // 65% composite matrix
+  stealthLevel: 'conventional',
   internalFuelKg: 4500,
   payloadKg: 2500, // Standard tactical mission payload
 };
@@ -111,17 +134,72 @@ export function estimateOswaldEfficiency(aspectRatio: number, sweepDeg: number):
  */
 export function calculateAircraftMassBudget(design: CadetAircraftDesign): AircraftMassBudget {
   const g = GRAVITY;
-  const emptyWeightFraction = calculateCompositeEmptyFraction(design.compositePercent);
+  const baseEmptyFraction = calculateCompositeEmptyFraction(design.compositePercent);
 
-  // MTOW formulation:
-  // MTOW = (Fuel + Payload) / (1 - emptyWeightFraction)
-  const usefulLoadKg = design.internalFuelKg + design.payloadKg;
-  const mtowKg = Math.max(500, usefulLoadKg / (1 - emptyWeightFraction));
-  const oewKg = mtowKg * emptyWeightFraction;
+  // 1. High-Lift Devices Non-Linear Weight Penalty
+  // Actuators, tracks, screw-jacks impose a minimum mechanical threshold.
+  // Penalty is substantial on small wings (S ~ 10-25 m^2) and amortizes on large wings (S >= 150 m^2).
+  let flapBasePenalty = 0.0;
+  let flapClBonus = 0.0;
+  switch (design.highLiftDevice) {
+    case 'plain_clean':
+      flapBasePenalty = 0.0;
+      flapClBonus = 0.0;
+      break;
+    case 'single_slotted_flaps':
+      flapBasePenalty = 0.025;
+      flapClBonus = 0.50;
+      break;
+    case 'fowler_slats':
+      flapBasePenalty = 0.055;
+      flapClBonus = 1.00;
+      break;
+  }
+  const wingAreaScaleFactor = Math.pow(40 / Math.max(10, design.wingAreaM2), 0.45);
+  const flapEmptyWeightDelta = flapBasePenalty * wingAreaScaleFactor;
+
+  // 2. Low Observable (LO) Stealth Weight Penalty (RAM coatings, internal bay structural stiffeners)
+  let stealthEmptyDelta = 0.0;
+  switch (design.stealthLevel) {
+    case 'conventional':
+      stealthEmptyDelta = 0.0;
+      break;
+    case 'reduced_signature':
+      stealthEmptyDelta = 0.035;
+      break;
+    case 'vlo_stealth':
+      stealthEmptyDelta = 0.090;
+      break;
+  }
+
+  // 3. Wing Sweep structural penalty (spar torsional stiffness)
+  const sweepWeightPenalty = (design.sweepDeg / 50) * 0.020;
+
+  // Total empty weight fraction
+  const emptyWeightFraction = baseEmptyFraction + flapEmptyWeightDelta + stealthEmptyDelta + sweepWeightPenalty;
 
   // Total thrust
   const totalThrustKn = design.engineCount * design.thrustPerEngineKn;
   const totalThrustN = totalThrustKn * 1000;
+
+  // 4. Engine Dry Mass Calculation based on engine class and tech level
+  let engineTW = 6.0;
+  switch (design.engineClass) {
+    case 'turboprop': engineTW = 4.5; break;
+    case 'high_bypass_turbofan': engineTW = 5.5; break;
+    case 'low_bypass_turbofan': engineTW = 8.0; break;
+    case 'afterburning_turbojet': engineTW = 9.5; break;
+  }
+  if (design.engineTechLevel === 'advanced_lightweight') {
+    engineTW *= 1.25; // 25% higher T/W saves engine weight
+  }
+  const engineWeightKg = Math.round(totalThrustN / (g * engineTW));
+
+  // MTOW formulation:
+  // MTOW = (Fuel + Payload) / (1 - emptyWeightFraction)
+  const usefulLoadKg = design.internalFuelKg + design.payloadKg;
+  const mtowKg = Math.max(500, usefulLoadKg / Math.max(0.2, 1 - emptyWeightFraction));
+  const oewKg = mtowKg * emptyWeightFraction;
 
   // Wing loading W/S
   const totalWeightN = mtowKg * g;
@@ -137,16 +215,19 @@ export function calculateAircraftMassBudget(design: CadetAircraftDesign): Aircra
 
   // Sweep effect on max lift coefficient: CLmax = CLmax0 * cos(sweep)
   const sweepFactor = Math.cos((design.sweepDeg * Math.PI) / 180);
-  const clMaxClean = Number((1.55 * sweepFactor).toFixed(2));
-  const clMaxFlaps = Number((2.40 * sweepFactor).toFixed(2));
+  const clMaxClean = Number((1.45 * sweepFactor).toFixed(2));
+  const clMaxFlaps = Number(((1.45 + flapClBonus) * sweepFactor).toFixed(2));
 
   return {
     mtowKg: Math.round(mtowKg),
     oewKg: Math.round(oewKg),
     fuelKg: design.internalFuelKg,
     payloadKg: design.payloadKg,
-    emptyWeightFraction,
+    engineWeightKg,
+    emptyWeightFraction: Number(emptyWeightFraction.toFixed(3)),
     compositePercent: design.compositePercent,
+    stealthLevel: design.stealthLevel,
+    highLiftDevice: design.highLiftDevice,
     totalThrustKn,
     totalThrustN,
     wingLoadingNm2: Number(wingLoadingNm2.toFixed(1)),
@@ -171,10 +252,13 @@ export const DESIGN_PRESETS: Record<string, { name: string; description: string;
       wingAreaM2: 14.0,
       aspectRatio: 8.0,
       sweepDeg: 5,
+      highLiftDevice: 'plain_clean',
       engineClass: 'turboprop',
       engineCount: 1,
       thrustPerEngineKn: 8.5,
+      engineTechLevel: 'standard_proven',
       compositePercent: 85,
+      stealthLevel: 'conventional',
       internalFuelKg: 280,
       payloadKg: 200,
     },
@@ -187,10 +271,13 @@ export const DESIGN_PRESETS: Record<string, { name: string; description: string;
       wingAreaM2: 48.0,
       aspectRatio: 3.2,
       sweepDeg: 42,
+      highLiftDevice: 'single_slotted_flaps',
       engineClass: 'afterburning_turbojet',
       engineCount: 2,
       thrustPerEngineKn: 85.0,
+      engineTechLevel: 'advanced_lightweight',
       compositePercent: 70,
+      stealthLevel: 'reduced_signature',
       internalFuelKg: 5200,
       payloadKg: 1800,
     },
@@ -203,10 +290,13 @@ export const DESIGN_PRESETS: Record<string, { name: string; description: string;
       wingAreaM2: 75.0,
       aspectRatio: 7.8,
       sweepDeg: 12,
+      highLiftDevice: 'fowler_slats',
       engineClass: 'turboprop',
       engineCount: 2,
       thrustPerEngineKn: 65.0,
+      engineTechLevel: 'standard_proven',
       compositePercent: 30,
+      stealthLevel: 'conventional',
       internalFuelKg: 7500,
       payloadKg: 4500,
     },
@@ -219,10 +309,13 @@ export const DESIGN_PRESETS: Record<string, { name: string; description: string;
       wingAreaM2: 52.0,
       aspectRatio: 10.5,
       sweepDeg: 18,
+      highLiftDevice: 'single_slotted_flaps',
       engineClass: 'high_bypass_turbofan',
       engineCount: 2,
       thrustPerEngineKn: 48.0,
+      engineTechLevel: 'standard_proven',
       compositePercent: 55,
+      stealthLevel: 'conventional',
       internalFuelKg: 8200,
       payloadKg: 2200,
     },

@@ -1,7 +1,9 @@
 import { useState, useMemo } from 'react';
-import { ConstraintDiagram } from './components/chart/ConstraintDiagram';
-import { ParametricPanel } from './components/design/ParametricPanel';
-import { MissionBuilder } from './components/mission/MissionBuilder';
+import { AirStaffMiniBar } from './components/ui/AirStaffMiniBar';
+import { Step1MissionBriefing } from './components/journey/Step1MissionBriefing';
+import { Step2LimitationsWizard } from './components/journey/Step2LimitationsWizard';
+import { Step3AircraftSizing } from './components/journey/Step3AircraftSizing';
+import { Step4MissionDebrief } from './components/journey/Step4MissionDebrief';
 import { SlideDrawer } from './components/ui/SlideDrawer';
 import { EquationDisplay } from './components/ui/EquationDisplay';
 import { BenchmarkDossier } from './components/benchmarks/BenchmarkDossier';
@@ -12,33 +14,32 @@ import {
 } from './physics/aircraftDesign';
 import { auditAircraftFeasibility } from './physics/feasibility';
 import { evaluateProcurementAndRisk } from './physics/costRisk';
-import { DEFAULT_MISSION_CONSTRAINTS } from './physics/constraints';
-import { MISSION_PRESETS, type MissionLeg } from './physics/missionLegs';
+import { DEFAULT_MISSION_CONSTRAINTS, type OperationalConstraints } from './physics/constraints';
+import type { MissionLeg } from './physics/missionLegs';
 import type { ConstraintDetail } from './data/constraintDetails';
 import type { BenchmarkAircraft } from './data/benchmarks';
 import {
-  Compass,
   BookOpen,
-  Plane,
-  FileText,
-  Sliders,
-  BarChart3,
-  Layers,
-  Sparkles,
-  Route
+  Sparkles
 } from 'lucide-react';
 
 export function App() {
-  // Cadet Aircraft Design State (Milestone 2)
+  // Cadet Aircraft Design State (Milestone 2 & 5)
   const [cadetDesign, setCadetDesign] = useState<CadetAircraftDesign>(DEFAULT_CADET_DESIGN);
 
-  // Cadet Mission Legs State (Option B)
-  const [missionLegs, setMissionLegs] = useState<MissionLeg[]>(() =>
-    JSON.parse(JSON.stringify(MISSION_PRESETS.tactical_airdrop.legs))
-  );
+  // Active Flight Limitations / Constraints State (Step 2)
+  const [missionConstraints, setMissionConstraints] = useState<OperationalConstraints>(DEFAULT_MISSION_CONSTRAINTS);
 
-  // Active View Mode for Cadets (Full Console vs Focused Views)
-  const [viewMode, setViewMode] = useState<'console' | 'mission' | 'chart' | 'sliders'>('console');
+  // Cadet Mission Legs State (Option B & Step 1)
+  const [missionLegs, setMissionLegs] = useState<MissionLeg[]>(() => [
+    { id: 'leg-1', name: 'Takeoff & Departure', type: 'takeoff', runwayElevationFt: 0, headwindKts: 5 },
+    { id: 'leg-2', name: 'Climb to Flight Level', type: 'climb', targetAltitudeFt: 25000, climbSpeedKmh: 450 },
+    { id: 'leg-3', name: 'Cruise Transit Outbound', type: 'cruise', distanceKm: 400, altitudeFt: 25000, speedKmh: 680 },
+    { id: 'leg-4', name: 'Base Recovery & Landing', type: 'landing', runwayElevationFt: 0, availableRunwayM: 1800, headwindKts: 5 },
+  ]);
+
+  // The 4-Step Guided Cadet Journey
+  const [journeyStep, setJourneyStep] = useState<1 | 2 | 3 | 4>(1);
 
   // Compute Mass Budget & Design Point
   const massBudget = useMemo(() => {
@@ -48,14 +49,14 @@ export function App() {
   // Dynamically update mission constraints based on aircraft geometry (CD0, AR, e, CLmax, and engine architecture)
   const activeConstraints = useMemo(() => {
     return {
-      ...DEFAULT_MISSION_CONSTRAINTS,
+      ...missionConstraints,
       cd0: massBudget.cd0,
       aspectRatio: cadetDesign.aspectRatio,
       oswaldEfficiency: massBudget.oswaldEfficiency,
       clMax: massBudget.clMaxFlaps,
       engineClass: cadetDesign.engineClass,
     };
-  }, [cadetDesign, massBudget]);
+  }, [missionConstraints, cadetDesign, massBudget]);
 
   // Compute Real-Time Feasibility Audit
   const feasibilityAudit = useMemo(() => {
@@ -71,7 +72,13 @@ export function App() {
       cadetDesign.engineCount,
       cadetDesign.thrustPerEngineKn,
       cadetDesign.sweepDeg,
-      cadetDesign.aspectRatio
+      cadetDesign.aspectRatio,
+      45.0,
+      cadetDesign.stealthLevel,
+      cadetDesign.highLiftDevice,
+      cadetDesign.wingAreaM2,
+      massBudget.mtowKg,
+      cadetDesign.engineTechLevel
     );
   }, [cadetDesign, massBudget]);
 
@@ -113,7 +120,7 @@ export function App() {
   return (
     <div className="min-h-screen bg-[var(--hud-bg)] text-[var(--hud-text)] flex flex-col font-mono selection:bg-cyan-500/30 selection:text-cyan-200">
       {/* Top Military HUD Navigation Bar */}
-      <header className="border-b border-[var(--hud-border)] bg-[var(--hud-panel-header)] px-4 py-3 sticky top-0 z-30 shadow-md">
+      <header className="border-b border-[var(--hud-border)] bg-[var(--hud-panel-header)] px-4 py-2.5 sticky top-0 z-30 shadow-md">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
           {/* RAFAC Brand & Title */}
           <div className="flex items-center gap-3">
@@ -141,198 +148,106 @@ export function App() {
                   {feasibilityAudit.isFeasible ? 'ENVELOPE VIABLE' : 'VIOLATION DETECTED'}
                 </span>
               </div>
-              <h1 className="text-base sm:text-lg font-black tracking-tight text-white flex items-center gap-2">
+              <h1 className="text-sm sm:text-base font-black tracking-tight text-white flex items-center gap-2">
                 AEROSPACE DESIGN SIMULATION
-                <span className="text-xs font-normal text-slate-400 hidden sm:inline">
-                  // PARAMETRIC SIZING & CONSTRAINTS
+                <span className="text-xs font-normal text-slate-400 hidden lg:inline">
+                  // CADET APPRENTICESHIP
                 </span>
               </h1>
             </div>
           </div>
 
-          {/* Sizing Context Badge */}
-          <div className="hidden md:flex items-center gap-3 bg-slate-900/90 border border-slate-800 rounded-md px-3 py-1.5 text-xs">
-            <Compass className="w-4 h-4 text-cyan-400" />
-            <div>
-              <span className="text-[10px] uppercase text-slate-500 block leading-tight">
-                Active Airframe Sizing
-              </span>
-              <span className="font-bold text-slate-200">
-                {cadetDesign.callsign} ({massBudget.mtowKg.toLocaleString()} kg MTOW)
-              </span>
-            </div>
+          {/* Center: The 4-Step Journey Navigation Stepper */}
+          <div className="flex items-center bg-slate-900 border border-slate-800 rounded p-0.5 text-xs">
+            {[
+              { step: 1, label: '1. Mission', desc: 'Define Sortie' },
+              { step: 2, label: '2. Limits', desc: 'Set Constraints' },
+              { step: 3, label: '3. Sizing', desc: 'Size Aircraft' },
+              { step: 4, label: '4. Debrief', desc: 'Fly & Score' },
+            ].map((st) => (
+              <button
+                key={st.step}
+                onClick={() => setJourneyStep(st.step as 1 | 2 | 3 | 4)}
+                className={`px-3 py-1 rounded font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  journeyStep === st.step
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <span>{st.label}</span>
+              </button>
+            ))}
           </div>
 
-          {/* View Mode Switcher */}
-          <div className="flex items-center bg-slate-900 border border-slate-800 rounded-sm p-0.5 text-xs">
-            <button
-              onClick={() => setViewMode('console')}
-              className={`px-2.5 py-1 rounded-xs flex items-center gap-1.5 cursor-pointer transition-colors ${
-                viewMode === 'console'
-                  ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/40'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Full Console</span>
-            </button>
-            <button
-              onClick={() => setViewMode('mission')}
-              className={`px-2.5 py-1 rounded-xs flex items-center gap-1.5 cursor-pointer transition-colors ${
-                viewMode === 'mission'
-                  ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/40'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Route className="w-3.5 h-3.5" />
-              <span>Mission Legs</span>
-            </button>
-            <button
-              onClick={() => setViewMode('chart')}
-              className={`px-2.5 py-1 rounded-xs flex items-center gap-1.5 cursor-pointer transition-colors ${
-                viewMode === 'chart'
-                  ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/40'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <BarChart3 className="w-3.5 h-3.5" />
-              <span>Chart Focus</span>
-            </button>
-            <button
-              onClick={() => setViewMode('sliders')}
-              className={`px-2.5 py-1 rounded-xs flex items-center gap-1.5 cursor-pointer transition-colors ${
-                viewMode === 'sliders'
-                  ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/40'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Sliders className="w-3.5 h-3.5" />
-              <span>Sliders Only</span>
-            </button>
-          </div>
+          {/* Right: Persistent Air Staff Procurement Mini-Bar */}
+          <AirStaffMiniBar procurement={procurementEval} />
         </div>
       </header>
 
-      {/* Main Simulation Viewport */}
+      {/* Main Guided Cadet Journey Viewport */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
-        {/* Console View: Parametric Panel & Constraint Diagram */}
-        {viewMode === 'console' && (
-          <div className="space-y-6">
-            {/* The Master Interactive SVG Constraint Diagram with Cadet Design Point */}
-            <ConstraintDiagram
-              onInspectConstraint={handleInspectConstraint}
-              onSelectAircraft={handleSelectAircraft}
-              designPoint={{
-                ws: massBudget.wingLoadingNm2,
-                tw: massBudget.thrustToWeight,
-                callsign: cadetDesign.callsign,
-              }}
-              audit={feasibilityAudit}
-              activeConstraints={activeConstraints}
-            />
-
-            {/* Mission Legs Engine & Breguet Sortie Builder */}
-            <MissionBuilder
-              design={cadetDesign}
-              massBudget={massBudget}
-              legs={missionLegs}
-              onLegsChange={setMissionLegs}
-            />
-
-            {/* Parametric Input Sliders Panel */}
-            <ParametricPanel
-              design={cadetDesign}
-              budget={massBudget}
-              procurement={procurementEval}
-              onChange={setCadetDesign}
-            />
-          </div>
+        {/* Step 1: Define Mission Requirements */}
+        {journeyStep === 1 && (
+          <Step1MissionBriefing
+            legs={missionLegs}
+            onLegsChange={setMissionLegs}
+            onProceedToStep2={() => setJourneyStep(2)}
+          />
         )}
 
-        {/* Mission Focused View */}
-        {viewMode === 'mission' && (
-          <div className="space-y-6">
-            <MissionBuilder
-              design={cadetDesign}
-              massBudget={massBudget}
-              legs={missionLegs}
-              onLegsChange={setMissionLegs}
-            />
-          </div>
+        {/* Step 2: Establish Flight Limitations Wizard */}
+        {journeyStep === 2 && (
+          <Step2LimitationsWizard
+            constraints={missionConstraints}
+            onConstraintsChange={setMissionConstraints}
+            onProceedToStep3={() => setJourneyStep(3)}
+            onBackToStep1={() => setJourneyStep(1)}
+            onInspectConstraint={handleInspectConstraint}
+            onSelectAircraft={handleSelectAircraft}
+          />
         )}
 
-        {/* Chart Focus View */}
-        {viewMode === 'chart' && (
-          <div className="space-y-4">
-            <ConstraintDiagram
-              onInspectConstraint={handleInspectConstraint}
-              onSelectAircraft={handleSelectAircraft}
-              designPoint={{
-                ws: massBudget.wingLoadingNm2,
-                tw: massBudget.thrustToWeight,
-                callsign: cadetDesign.callsign,
-              }}
-              audit={feasibilityAudit}
-              activeConstraints={activeConstraints}
-            />
-          </div>
+        {/* Step 3: Cadet Aircraft Sizing */}
+        {journeyStep === 3 && (
+          <Step3AircraftSizing
+            design={cadetDesign}
+            budget={massBudget}
+            constraints={activeConstraints}
+            audit={feasibilityAudit}
+            procurement={procurementEval}
+            onDesignChange={setCadetDesign}
+            onProceedToStep4={() => setJourneyStep(4)}
+            onBackToStep2={() => setJourneyStep(2)}
+            onInspectConstraint={handleInspectConstraint}
+            onSelectAircraft={handleSelectAircraft}
+          />
         )}
 
-        {/* Sliders Focus View */}
-        {viewMode === 'sliders' && (
-          <div className="space-y-4">
-            <ParametricPanel
-              design={cadetDesign}
-              budget={massBudget}
-              procurement={procurementEval}
-              onChange={setCadetDesign}
-            />
-          </div>
+        {/* Step 4: Mission Execution, Fuel Audit & Cadet Wings */}
+        {journeyStep === 4 && (
+          <Step4MissionDebrief
+            design={cadetDesign}
+            budget={massBudget}
+            constraints={activeConstraints}
+            audit={feasibilityAudit}
+            procurement={procurementEval}
+            legs={missionLegs}
+            onBackToStep3={() => setJourneyStep(3)}
+            onBackToStep2={() => setJourneyStep(2)}
+            onBackToStep1={() => setJourneyStep(1)}
+          />
         )}
-
-        {/* Operational Sizing Guidance Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-          <div className="bg-[var(--hud-panel)] border border-[var(--hud-border)] p-4 rounded-lg space-y-2">
-            <div className="flex items-center gap-2 text-amber-400 font-bold">
-              <FileText className="w-4 h-4" />
-              <span>1. Takeoff Field Length</span>
-            </div>
-            <p className="text-[11px] text-[var(--hud-text-muted)] leading-relaxed">
-              Ground friction and rotation velocity dictate the minimum thrust-to-weight required to unstick safely within the available runway distance.
-            </p>
-          </div>
-
-          <div className="bg-[var(--hud-panel)] border border-[var(--hud-border)] p-4 rounded-lg space-y-2">
-            <div className="flex items-center gap-2 text-cyan-400 font-bold">
-              <Plane className="w-4 h-4" />
-              <span>2. Service Ceiling & Altitude Transit</span>
-            </div>
-            <p className="text-[11px] text-[var(--hud-text-muted)] leading-relaxed">
-              Reduced air density at high altitude lowers engine thrust. The ceiling boundary guarantees residual climb capability is maintained.
-            </p>
-          </div>
-
-          <div className="bg-[var(--hud-panel)] border border-[var(--hud-border)] p-4 rounded-lg space-y-2">
-            <div className="flex items-center gap-2 text-red-400 font-bold">
-              <BookOpen className="w-4 h-4" />
-              <span>3. Touchdown & Approach Safety</span>
-            </div>
-            <p className="text-[11px] text-[var(--hud-text-muted)] leading-relaxed">
-              The vertical stall boundary caps wing loading so landing approach speeds remain docile and within runway braking limits.
-            </p>
-          </div>
-        </div>
       </main>
 
       {/* Footer */}
       <footer className="border-t border-[var(--hud-border)] bg-[var(--hud-panel-header)] px-4 py-3 text-[11px] text-[var(--hud-text-muted)] font-mono">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
-          <span>ROYAL AIR FORCE AIR CADETS // AEROSPACE ENGINEERING & PROJECT MANAGEMENT SIMULATION</span>
+          <span>ROYAL AIR FORCE AIR CADETS // AEROSPACE ENGINEERING & SIZING SIMULATION</span>
           <span className="text-cyan-500/80">AIR CADET TRAINING CORPS (RAFAC)</span>
         </div>
       </footer>
 
-      {/* Reusable Slide-In Drawer for Physics & Aircraft Dossiers */}
+      {/* Slide-In Drawer for Detailed Physics Equations & Aircraft Benchmark Dossiers */}
       <SlideDrawer
         isOpen={drawerState.isOpen}
         onClose={handleCloseDrawer}
@@ -362,7 +277,6 @@ export function App() {
             : undefined
         }
       >
-        {/* Mode 1: Detailed Constraint Physics & HTML/CSS Formula */}
         {drawerState.mode === 'constraint' && drawerState.constraintDetail && (
           <div className="space-y-6">
             <EquationDisplay
@@ -377,10 +291,10 @@ export function App() {
                 Aeronautical & Flight Mechanics Principles
               </h4>
               <ul className="space-y-2 text-xs text-slate-300 leading-relaxed">
-                {drawerState.constraintDetail.aerodynamicMechanics.map((step, idx) => (
+                {drawerState.constraintDetail.aerodynamicMechanics.map((s, idx) => (
                   <li key={idx} className="flex items-start gap-2 bg-slate-900/40 p-2 rounded-sm border border-slate-800/80">
                     <span className="text-cyan-400 font-bold shrink-0">▸</span>
-                    <span>{step}</span>
+                    <span>{s}</span>
                   </li>
                 ))}
               </ul>
@@ -398,7 +312,6 @@ export function App() {
           </div>
         )}
 
-        {/* Mode 2: Benchmark Aircraft Engineering Dossier */}
         {drawerState.mode === 'aircraft' && drawerState.aircraft && (
           <BenchmarkDossier aircraft={drawerState.aircraft} />
         )}

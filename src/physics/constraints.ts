@@ -34,6 +34,9 @@ export interface OperationalConstraints {
   turnSpeedKts: number;            // Speed during turn in knots (e.g., 250 kts)
   turnAltitudeFt: number;          // Altitude during turn (e.g., 10,000 ft)
 
+  // Instantaneous Turn (Snap high-G un-sustained turn)
+  instantaneousTurnG?: number;     // Instantaneous g load limit (e.g., 5.0 - 7.0 g)
+
   // Propulsion Architecture
   engineClass?: 'turboprop' | 'high_bypass_turbofan' | 'low_bypass_turbofan' | 'afterburning_turbojet';
 }
@@ -63,6 +66,7 @@ export const DEFAULT_MISSION_CONSTRAINTS: OperationalConstraints = {
   turnLoadFactorG: 3.0,
   turnSpeedKts: 250,         // ~128.6 m/s
   turnAltitudeFt: 10000,
+  instantaneousTurnG: 5.5,
 };
 
 /**
@@ -188,6 +192,21 @@ export function calculateSustainedTurnTW(ws: number, constraints: OperationalCon
 }
 
 /**
+ * 6b. Instantaneous Turn Constraint (Vertical Wing Loading limit)
+ * (W/S)_inst = (q * CL_max) / n_inst
+ * If aircraft wing loading exceeds this, the aircraft cannot pull n_inst without stalling (accelerated aerodynamic stall).
+ */
+export function calculateInstantaneousTurnWingLoading(constraints: OperationalConstraints): number {
+  const atmo = getAtmosphereAtAltitudeFeet(constraints.turnAltitudeFt);
+  const vTurnMs = constraints.turnSpeedKts * 0.514444;
+  const q = 0.5 * atmo.densityKgM3 * vTurnMs * vTurnMs;
+  const nInst = constraints.instantaneousTurnG || 5.5;
+  const clMaxManeuver = Math.min(2.4, constraints.clMax * 0.9); // Clean or maneuver flap CL_max
+
+  return (q * clMaxManeuver) / nInst;
+}
+
+/**
  * 7. Cruise / Endurance Baseline
  * Minimum thrust required for steady-state cruise at (L/D)_max
  */
@@ -238,10 +257,12 @@ export function generateConstraintCurves(
   }));
 
   const stallWS = calculateStallWingLoading(constraints);
+  const instantaneousTurnWS = calculateInstantaneousTurnWingLoading(constraints);
   const cruiseTW = calculateCruiseTW(constraints);
 
   return {
     stallWS,
+    instantaneousTurnWS,
     cruiseTW,
     takeoffPoints,
     maxSpeedPoints,

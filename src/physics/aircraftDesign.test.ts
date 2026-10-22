@@ -17,6 +17,9 @@ test('Aircraft Design: Mass Budget MTOW formulation', () => {
     internalFuelKg: 4000,
     payloadKg: 2000,
     compositePercent: 0, // 0% composite (aluminum alloy) => fraction = 0.53
+    highLiftDevice: 'plain_clean',
+    sweepDeg: 0,
+    stealthLevel: 'conventional',
   };
 
   const budget = calculateAircraftMassBudget(design);
@@ -105,10 +108,13 @@ test('Feasibility Audit: Identifies compliant balanced configuration', () => {
     wingAreaM2: 55.0,
     aspectRatio: 8.5,
     sweepDeg: 15,
+    highLiftDevice: 'fowler_slats',
     engineClass: 'low_bypass_turbofan',
     engineCount: 2,
     thrustPerEngineKn: 85.0, // 170 kN total
+    engineTechLevel: 'standard_proven',
     compositePercent: 70,
+    stealthLevel: 'conventional',
     internalFuelKg: 4000,
     payloadKg: 2500,
   };
